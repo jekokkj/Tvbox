@@ -21,7 +21,20 @@ jobs:
         with:
           gradle-version: 8.7
 
+      - name: Chave de assinatura
+        env:
+          KS_B64: ${{ secrets.KS_B64 }}
+          KS_PASS: ${{ secrets.KS_PASS }}
+        run: |
+          echo "$KS_B64" | base64 -d > "$RUNNER_TEMP/ks.p12"
+          echo "KS_FILE=$RUNNER_TEMP/ks.p12" >> "$GITHUB_ENV"
+          ALIAS=$(keytool -list -storetype PKCS12 -keystore "$RUNNER_TEMP/ks.p12" -storepass "$KS_PASS" | grep -i PrivateKeyEntry | head -1 | cut -d, -f1)
+          echo "KS_ALIAS=$ALIAS" >> "$GITHUB_ENV"
+          echo "alias da chave: $ALIAS"
+
       - name: Compilar
+        env:
+          KS_PASS: ${{ secrets.KS_PASS }}
         run: gradle assembleRelease --no-daemon
 
       - uses: actions/upload-artifact@v4
@@ -44,8 +57,21 @@ jobs:
         with:
           gradle-version: 8.7
 
+      - name: Chave de assinatura
+        env:
+          KS_B64: ${{ secrets.KS_B64 }}
+          KS_PASS: ${{ secrets.KS_PASS }}
+        run: |
+          echo "$KS_B64" | base64 -d > "$RUNNER_TEMP/ks.p12"
+          echo "KS_FILE=$RUNNER_TEMP/ks.p12" >> "$GITHUB_ENV"
+          ALIAS=$(keytool -list -storetype PKCS12 -keystore "$RUNNER_TEMP/ks.p12" -storepass "$KS_PASS" | grep -i PrivateKeyEntry | head -1 | cut -d, -f1)
+          echo "KS_ALIAS=$ALIAS" >> "$GITHUB_ENV"
+          echo "alias da chave: $ALIAS"
+
       - name: Compilar
         working-directory: vita
+        env:
+          KS_PASS: ${{ secrets.KS_PASS }}
         run: gradle assembleRelease --no-daemon
 
       - uses: actions/upload-artifact@v4
