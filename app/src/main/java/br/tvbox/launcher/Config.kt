@@ -27,20 +27,20 @@ object Config {
     private fun p(ctx: Context) = ctx.getSharedPreferences(ARQ, Context.MODE_PRIVATE)
 
     fun tema(ctx: Context): String? = p(ctx).getString("tema", null)
-    fun setTema(ctx: Context, id: String) { p(ctx).edit().putString("tema", id).apply() }
+    fun setTema(ctx: Context, id: String) { p(ctx).edit().putString("tema", id).commit() }
 
     /** null = automatico (a cor do tema). */
     fun corIcone(ctx: Context): String? = p(ctx).getString("corIcone", null)
-    fun setCorIcone(ctx: Context, cor: String?) { p(ctx).edit().putString("corIcone", cor).apply() }
+    fun setCorIcone(ctx: Context, cor: String?) { p(ctx).edit().putString("corIcone", cor).commit() }
 
     fun corFoco(ctx: Context): String? = p(ctx).getString("corFoco", null)
-    fun setCorFoco(ctx: Context, cor: String?) { p(ctx).edit().putString("corFoco", cor).apply() }
+    fun setCorFoco(ctx: Context, cor: String?) { p(ctx).edit().putString("corFoco", cor).commit() }
 
     /** 0 = desligado, 1 = campo, 2 = estrelas, 3 = relogio. */
     fun descanso(ctx: Context): Int = p(ctx).getInt("descanso", 1).coerceIn(0, 3)
-    fun setDescanso(ctx: Context, v: Int) { p(ctx).edit().putInt("descanso", v).apply() }
+    fun setDescanso(ctx: Context, v: Int) { p(ctx).edit().putInt("descanso", v).commit() }
 
     /** Indice em [ESPERAS]. */
     fun espera(ctx: Context): Int = p(ctx).getInt("espera", 1).coerceIn(0, ESPERAS.size - 1)
-    fun setEspera(ctx: Context, v: Int) { p(ctx).edit().putInt("espera", v).apply() }
+    fun setEspera(ctx: Context, v: Int) { p(ctx).edit().putInt("espera", v).commit() }
 }

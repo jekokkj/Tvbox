@@ -59,6 +59,10 @@ class MainActivity : Activity() {
     }
 
     override fun onPause() {
+        // Regrava as escolhas ao sair (gravacao sincrona): TV box desligada da tomada nao pode perder o tema.
+        Config.setTema(this, tela.tema.id)
+        Config.setCorIcone(this, tela.corIcone)
+        Config.setCorFoco(this, tela.corFoco)
         handler.removeCallbacks(relogio)
         handler.removeCallbacks(ocioso)
         super.onPause()

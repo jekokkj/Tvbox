@@ -205,6 +205,11 @@ class MainActivity : Activity() {
             val escolhido = tamanhoPendente ?: melhorTamanho(h.supportedSizeList)
             tamanhoPendente = null
             if (escolhido != null) {
+                val quirks = if (bandaFixa) UVCCamera.UVC_QUIRK_FIX_BANDWIDTH else 0
+                h.openCamera(UVCParam(escolhido, quirks))
+            } else {
+                h.openCamera()
+            }
         }
 
         override fun onCameraOpen(device: UsbDevice) {
