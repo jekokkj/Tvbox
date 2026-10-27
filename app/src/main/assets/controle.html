@@ -1,0 +1,191 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no">
+<meta name="theme-color" content="#0b140d">
+<title>Controle TV Box</title>
+<style>
+  :root { --fundo:#0b140d; --painel:#102417; --borda:#1f6b35; --texto:#33ff66; --destaque:#ffb000; --apagado:#1f8a40; --erro:#ff5a5a; }
+  * { box-sizing:border-box; -webkit-tap-highlight-color:transparent; }
+  html,body { margin:0; background:var(--fundo); color:var(--texto); font:16px/1.35 "Courier New",monospace; }
+  body { padding:12px 16px 40px; max-width:520px; margin:0 auto; }
+  h1 { font-size:18px; color:var(--destaque); margin:4px 0 12px; letter-spacing:1px; }
+  h2 { font-size:14px; color:var(--destaque); margin:22px 0 8px; letter-spacing:1px; }
+  button, input, textarea { font:inherit; color:var(--texto); background:var(--painel); border:2px solid var(--borda); border-radius:6px; }
+  button { padding:12px 8px; text-transform:uppercase; cursor:pointer; touch-action:manipulation; }
+  button:active { background:var(--borda); color:var(--fundo); }
+  input, textarea { width:100%; padding:10px; }
+  input:focus, textarea:focus { outline:none; border-color:var(--destaque); }
+  .linha { display:flex; gap:8px; margin:8px 0; }
+  .linha > * { flex:1; }
+  .dpad { display:grid; grid-template-columns:repeat(3,1fr); gap:8px; max-width:330px; margin:0 auto; }
+  .dpad button { height:72px; font-size:24px; }
+  .dpad .ok { background:var(--borda); color:var(--fundo); font-weight:bold; font-size:20px; }
+  .vazio { visibility:hidden; }
+  .msg { min-height:22px; color:var(--apagado); font-size:13px; margin:6px 0; }
+  .barra { height:14px; border:2px solid var(--borda); border-radius:4px; overflow:hidden; }
+  .barra div { height:100%; width:0; background:var(--destaque); }
+  .lista div { display:flex; justify-content:space-between; gap:8px; padding:8px 0; border-bottom:1px dashed var(--borda); }
+  .lista button { padding:4px 10px; font-size:13px; }
+  .card { border:2px solid var(--borda); border-radius:8px; padding:12px; background:#0d1a10; }
+  .esconde { display:none; }
+  .tag { color:var(--apagado); font-size:12px; }
+</style>
+</head>
+<body>
+<h1>▶ CONTROLE TV BOX</h1>
+
+<div id="telaPin" class="card">
+  <div>Digite o PIN que aparece na TV (cartão CONTROLE):</div>
+  <div class="linha"><input id="pin" inputmode="numeric" maxlength="4" placeholder="0000" autocomplete="off"><button onclick="entrar()">Entrar</button></div>
+  <div class="msg" id="msgPin"></div>
+</div>
+
+<div id="app" class="esconde">
+  <div class="msg" id="estado">conectado</div>
+
+  <div class="dpad">
+    <button class="vazio"></button><button onclick="tecla('up')">▲</button><button class="vazio"></button>
+    <button onclick="tecla('left')">◀</button><button class="ok" onclick="tecla('ok')" oncontextmenu="tecla('oklongo');return false">OK</button><button onclick="tecla('right')">▶</button>
+    <button onclick="tecla('back')">Voltar</button><button onclick="tecla('down')">▼</button><button onclick="tecla('home')">Início</button>
+  </div>
+  <div class="linha">
+    <button onclick="tecla('menu')">Menu</button><button onclick="tecla('play')">⏯</button><button onclick="tecla('oklongo')">Segurar OK</button>
+  </div>
+  <div class="linha">
+    <button onclick="volume('menos')">Vol −</button><button onclick="volume('mudo')">Mudo</button><button onclick="volume('mais')">Vol +</button>
+  </div>
+
+  <h2>▶ ABRIR</h2>
+  <div class="linha"><button onclick="abrir('radio')">Rádio</button><button onclick="abrir('podcasts')">Podcasts</button><button onclick="abrir('painel')">Painel</button></div>
+  <div class="linha"><button onclick="abrir('youtube')">YouTube</button><button onclick="abrir('kodi')">Kodi</button><button onclick="abrir('jogos')">Jogos</button></div>
+
+  <h2>▶ ESCREVER NA TV</h2>
+  <div class="tag">Na tela de Rádio vira busca. Um link (http...) abre na TV.</div>
+  <div class="linha"><input id="texto" placeholder="texto ou link"><button style="flex:0 0 90px" onclick="enviarTexto()">Enviar</button></div>
+
+  <h2>▶ ENVIAR ARQUIVO</h2>
+  <div class="tag">Fotos, vídeos, músicas, APKs… ficam no cartão CONTROLE da TV.</div>
+  <div class="linha"><input type="file" id="arquivo" multiple></div>
+  <div class="barra"><div id="progresso"></div></div>
+  <div class="msg" id="msgArq"></div>
+
+  <h2>▶ RÁDIO</h2>
+  <div class="linha"><input id="buscaRadio" placeholder="nome da rádio (ex.: Jovem Pan)"><button style="flex:0 0 90px" onclick="buscarRadio()">Buscar</button></div>
+
+  <h2>▶ PODCASTS</h2>
+  <div class="linha"><input id="podcast" placeholder="nome do podcast ou link do feed RSS"><button style="flex:0 0 90px" onclick="addPodcast()">Assinar</button></div>
+  <div class="msg" id="msgPod"></div>
+  <div class="lista" id="listaPod"></div>
+
+  <h2>▶ PAINEL DE CASA</h2>
+  <div class="linha"><input id="cidade" placeholder="cidade do clima"><button style="flex:0 0 90px" onclick="salvarCidade()">Salvar</button></div>
+  <div class="tag">Lembretes</div>
+  <div class="linha"><input id="lemTexto" placeholder="lembrete"><input id="lemQuando" placeholder="quando (opcional)" style="flex:0 0 38%"></div>
+  <div class="linha"><button onclick="addLembrete()">Adicionar lembrete</button></div>
+  <div class="lista" id="listaLem"></div>
+  <div class="tag" style="margin-top:12px">Feeds de notícias (um link RSS por linha)</div>
+  <textarea id="feeds" rows="3"></textarea>
+  <div class="linha"><button onclick="salvarFeeds()">Salvar feeds</button></div>
+</div>
+
+<script>
+let PIN = localStorage.getItem('pin') || '';
+const $ = id => document.getElementById(id);
+
+async function api(caminho, opcoes = {}) {
+  opcoes.headers = Object.assign({ 'X-Pin': PIN }, opcoes.headers || {});
+  const r = await fetch('/api/' + caminho, opcoes);
+  if (r.status === 401) { sair('PIN errado'); throw new Error('pin'); }
+  if (r.status === 429) { sair('Bloqueado: reabra o launcher na TV'); throw new Error('bloqueado'); }
+  return r.json();
+}
+function sair(msg) { localStorage.removeItem('pin'); $('app').classList.add('esconde'); $('telaPin').classList.remove('esconde'); $('msgPin').textContent = msg; }
+async function entrar() {
+  PIN = $('pin').value.trim();
+  try { await api('estado'); localStorage.setItem('pin', PIN); mostrar(); } catch (e) {}
+}
+function mostrar() { $('telaPin').classList.add('esconde'); $('app').classList.remove('esconde'); carregar(); }
+function estado(t) { $('estado').textContent = t; }
+
+async function tecla(k) { if (navigator.vibrate) navigator.vibrate(15); try { const r = await api('tecla?k=' + k, { method: 'POST' }); estado(r.ok); } catch (e) {} }
+async function volume(d) { try { const r = await api('volume?d=' + d, { method: 'POST' }); estado(r.ok); } catch (e) {} }
+async function abrir(c) { try { const r = await api('abrir?c=' + c, { method: 'POST' }); estado(r.ok); } catch (e) {} }
+async function enviarTexto() {
+  const t = $('texto').value; if (!t) return;
+  try { const r = await api('texto', { method: 'POST', body: t }); estado(r.ok); $('texto').value = ''; } catch (e) {}
+}
+async function buscarRadio() {
+  const t = $('buscaRadio').value.trim(); if (!t) return;
+  try { const r = await api('radio?busca=' + encodeURIComponent(t), { method: 'POST' }); estado(r.ok); } catch (e) {}
+}
+
+$('arquivo').addEventListener('change', async () => {
+  const arqs = [...$('arquivo').files];
+  for (let i = 0; i < arqs.length; i++) await enviarArquivo(arqs[i], i + 1, arqs.length);
+  $('arquivo').value = '';
+});
+function enviarArquivo(f, n, total) {
+  return new Promise(ok => {
+    const x = new XMLHttpRequest();
+    x.open('POST', '/api/enviar?nome=' + encodeURIComponent(f.name));
+    x.setRequestHeader('X-Pin', PIN);
+    x.upload.onprogress = e => { if (e.lengthComputable) { $('progresso').style.width = (100 * e.loaded / e.total) + '%'; $('msgArq').textContent = `(${n}/${total}) ${f.name}: ${Math.round(100 * e.loaded / e.total)}%`; } };
+    x.onload = () => { let r = {}; try { r = JSON.parse(x.responseText); } catch (e) {} $('msgArq').textContent = r.ok ? `✔ ${r.ok} chegou na TV` : `✖ ${r.erro || 'falhou'}`; ok(); };
+    x.onerror = () => { $('msgArq').textContent = '✖ conexão caiu'; ok(); };
+    x.send(f);
+  });
+}
+
+async function addPodcast() {
+  const t = $('podcast').value.trim(); if (!t) return;
+  $('msgPod').textContent = 'procurando...';
+  try { const r = await api('podcast?add=' + encodeURIComponent(t), { method: 'POST' }); $('msgPod').textContent = r.ok; $('podcast').value = ''; listarPodcasts(); } catch (e) {}
+}
+async function listarPodcasts() {
+  const a = await api('podcasts');
+  $('listaPod').innerHTML = '';
+  a.forEach((p, i) => {
+    const d = document.createElement('div');
+    d.innerHTML = '<span></span><button>remover</button>';
+    d.querySelector('span').textContent = p.nome;
+    d.querySelector('button').onclick = async () => { a.splice(i, 1); await api('podcasts', { method: 'POST', body: JSON.stringify(a) }); listarPodcasts(); };
+    $('listaPod').appendChild(d);
+  });
+}
+let lembretes = [];
+async function listarLembretes() {
+  lembretes = await api('lembretes');
+  $('listaLem').innerHTML = '';
+  lembretes.forEach((l, i) => {
+    const d = document.createElement('div');
+    d.innerHTML = '<span></span><button>apagar</button>';
+    d.querySelector('span').textContent = l.texto + (l.quando ? ' — ' + l.quando : '');
+    d.querySelector('button').onclick = async () => { lembretes.splice(i, 1); await api('lembretes', { method: 'POST', body: JSON.stringify(lembretes) }); listarLembretes(); };
+    $('listaLem').appendChild(d);
+  });
+}
+async function addLembrete() {
+  const t = $('lemTexto').value.trim(); if (!t) return;
+  lembretes.push({ texto: t, quando: $('lemQuando').value.trim() });
+  await api('lembretes', { method: 'POST', body: JSON.stringify(lembretes) });
+  $('lemTexto').value = ''; $('lemQuando').value = ''; listarLembretes();
+}
+async function salvarCidade() { const c = $('cidade').value.trim(); if (!c) return; const r = await api('cidade?c=' + encodeURIComponent(c), { method: 'POST' }); estado('cidade: ' + r.cidade); }
+async function salvarFeeds() {
+  const a = $('feeds').value.split('\n').map(s => s.trim()).filter(s => s.startsWith('http'));
+  await api('noticias', { method: 'POST', body: JSON.stringify(a) }); estado('feeds salvos');
+}
+async function carregar() {
+  try {
+    listarPodcasts(); listarLembretes();
+    $('cidade').value = (await api('cidade')).cidade;
+    $('feeds').value = (await api('noticias')).join('\n');
+  } catch (e) {}
+}
+$('pin').addEventListener('keydown', e => { if (e.key === 'Enter') entrar(); });
+if (PIN) api('estado').then(mostrar).catch(() => {});
+</script>
+</body>
+</html>

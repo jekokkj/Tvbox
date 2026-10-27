@@ -175,6 +175,10 @@ class LauncherView(ctx: Context) : View(ctx) {
             when (interno) {
                 "todos" -> abrirPainel(TelaTodos(this))
                 "ajustes" -> abrirPainel(TelaAjustes(this))
+                "radio" -> abrirPainel(TelaRadio(this))
+                "podcasts" -> abrirPainel(TelaPodcasts(this))
+                "painel" -> abrirPainel(TelaPainel(this))
+                "controle" -> abrirPainel(TelaControle(this))
             }
             return
         }
@@ -190,6 +194,18 @@ class LauncherView(ctx: Context) : View(ctx) {
         c.loja?.let { if (lancar(Intent(Intent.ACTION_VIEW, Uri.parse("market://details?id=$it")))) return }
         c.web?.let { if (lancar(Intent(Intent.ACTION_VIEW, Uri.parse(it)))) return }
         Toast.makeText(context, "NAO FOI POSSIVEL ABRIR", Toast.LENGTH_SHORT).show()
+    }
+
+    /** Abre um cartao pelo nome do icone (usado pelo controle do celular). Fecha as telas abertas antes. */
+    fun abrirCartao(nome: String): Boolean {
+        val i = CARTOES.indexOfFirst { it.icone == nome || it.interno == nome }
+        if (i < 0) return false
+        while (painel != null) fecharPainel()
+        if (egg) fecharEgg()
+        selecionado = i
+        abrir()
+        invalidate()
+        return true
     }
 
     private fun lancar(i: Intent): Boolean = try {
@@ -237,15 +253,29 @@ class LauncherView(ctx: Context) : View(ctx) {
         val tc = max(2, (cc * 0.75f).toInt())
         PixelFont.desenhar(cv, "▶ INÍCIO", sx, sy + (altRel - PixelFont.altura(tc)) / 2f, tc, t.destaque, t.contorno)
 
-        // Os 6 cartoes cabem todos numa linha.
-        val slot = sw / CARTOES.size
+        // Fileira de cartoes: 6 por vez, rolando para acompanhar o foco.
+        val visiveis = minOf(6, CARTOES.size)
+        val slot = sw / visiveis
         val cw = slot * 0.83f
         val cy = h * 0.42f
         val lc = max(1, (slot * 0.95f / PixelFont.largura("X".repeat(CARTOES.maxOf { it.rotulo.length }), 1)).toInt())
-        for (i in CARTOES.indices) {
-            if (i != selecionado) desenharCartao(cv, i, sx + slot * (i + 0.5f), cy, cw, lc, t)
+        val primeiro = (selecionado - 2).coerceIn(0, CARTOES.size - visiveis)
+        for (k in 0 until visiveis) {
+            val i = primeiro + k
+            if (i != selecionado) desenharCartao(cv, i, sx + slot * (k + 0.5f), cy, cw, lc, t)
         }
-        desenharCartao(cv, selecionado, sx + slot * (selecionado + 0.5f), cy, cw, lc, t) // foco por cima
+        desenharCartao(cv, selecionado, sx + slot * (selecionado - primeiro + 0.5f), cy, cw, lc, t) // foco por cima
+        // Setas indicando que ha mais cartoes para os lados.
+        val sc = max(2, cc / 2)
+        if (primeiro > 0) PixelFont.desenhar(cv, "◀", sx - sc * 8f, cy - sc * 3.5f, sc, t.destaque, t.contorno)
+        if (primeiro + visiveis < CARTOES.size) PixelFont.desenhar(cv, "▶", sx + sw + sc * 3f, cy - sc * 3.5f, sc, t.destaque, t.contorno)
+        // Pontinhos de posicao.
+        val dot = max(2f, sc * 0.8f)
+        val totalDots = CARTOES.size * dot * 2.5f
+        for (i in CARTOES.indices) {
+            val x = w / 2f - totalDots / 2f + i * dot * 2.5f
+            Desenho.retangulo(cv, x, h * 0.605f, x + dot, h * 0.605f + dot, if (i == selecionado) t.destaque else t.borda)
+        }
 
         // Descricao do cartao em foco.
         val c = CARTOES[selecionado]
@@ -290,7 +320,19 @@ class LauncherView(ctx: Context) : View(ctx) {
 
         // Icone em escala inteira (pixel nitido); mais apagado se o app nao estiver instalado.
         val nomeCor = if (foco) (corFoco ?: t.corIconeFoco) else (corIcone ?: t.corIcone)
-        if (c.icone == "todos") {
+        val pixel = ICONES_PIXEL[c.icone]
+        if (pixel != null) {
+            // Icone desenhado em codigo (16x16), em escala inteira.
+            val u = max(1f, Math.floor((meio * 2f * 0.62f / 16f).toDouble()).toFloat())
+            val x0 = cx - 8 * u
+            val y0 = cy - 8 * u
+            tinta.color = Config.COR_RGB[nomeCor] ?: t.texto
+            if (!instalados[i]) tinta.alpha = 110
+            for (r in 0 until 16) for (col in 0 until 16) {
+                if (pixel[r][col] == '1') cv.drawRect(x0 + col * u, y0 + r * u, x0 + (col + 1) * u, y0 + (r + 1) * u, tinta)
+            }
+            tinta.alpha = 255
+        } else if (c.icone == "todos") {
             // Grade 3x3 de quadrados, desenhada em codigo (sem arquivo de icone).
             val lado = meio * 2f * 0.60f
             val q = lado / 3.4f

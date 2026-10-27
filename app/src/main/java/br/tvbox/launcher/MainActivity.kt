@@ -7,6 +7,11 @@ import android.os.Handler
 import android.os.Looper
 import android.view.KeyEvent
 import android.view.View
+import android.content.Intent
+import android.media.AudioManager
+import android.net.Uri
+import android.widget.Toast
+import org.json.JSONObject
 
 class MainActivity : Activity() {
 
@@ -47,10 +52,16 @@ class MainActivity : Activity() {
         tela.aoMudarConfig = { reagendarOcioso() }
         setContentView(tela)
         esconderBarras()
+        Rede.iniciar(this)
+        Servidor.executor = { cmd, args -> executar(cmd, args) }
+        if (Config.controle(this)) Servidor.iniciar(this)
     }
+
+    private var naFrente = false
 
     override fun onResume() {
         super.onResume()
+        naFrente = true
         esconderBarras()
         tela.atualizarInstalados()
         tela.painel?.aoRetomar()
@@ -59,6 +70,7 @@ class MainActivity : Activity() {
     }
 
     override fun onPause() {
+        naFrente = false
         // Regrava as escolhas ao sair (gravacao sincrona): TV box desligada da tomada nao pode perder o tema.
         Config.setTema(this, tela.tema.id)
         Config.setCorIcone(this, tela.corIcone)
@@ -168,5 +180,109 @@ class MainActivity : Activity() {
             return
         }
         if (tela.egg) tela.fecharEgg()
+    }
+
+    // ---------------------------------------------------------------- controle pelo celular
+
+    private fun trazerParaFrente() {
+        startActivity(Intent(this, MainActivity::class.java).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_REORDER_TO_FRONT))
+    }
+
+    /** Simula o aperto de uma tecla do controle remoto dentro do launcher. */
+    private fun injetar(codigo: Int) {
+        val agora = android.os.SystemClock.uptimeMillis()
+        dispatchKeyEvent(KeyEvent(agora, agora, KeyEvent.ACTION_DOWN, codigo, 0))
+        dispatchKeyEvent(KeyEvent(agora, agora + 60, KeyEvent.ACTION_UP, codigo, 0))
+    }
+
+    /** Comandos vindos do Servidor (sempre na thread principal). Devolve um texto curto para o celular. */
+    private fun executar(cmd: String, args: Map<String, String>): String {
+        reagendarOcioso()
+        when (cmd) {
+            "estado" -> return JSONObject()
+                .put("tela", tela.painel?.javaClass?.simpleName ?: "INICIO")
+                .put("naFrente", naFrente)
+                .put("tocando", Tocador.titulo)
+                .toString()
+            "redesenhar" -> { tela.invalidate(); return "OK" }
+            "recebido" -> {
+                Toast.makeText(this, "ARQUIVO RECEBIDO: " + (args["nome"] ?: ""), Toast.LENGTH_LONG).show()
+                (tela.painel as? TelaControle)?.listar()
+                return "OK"
+            }
+            "painel-atualizar" -> { (tela.painel as? TelaPainel)?.atualizar(); return "OK" }
+            "volume" -> {
+                val am = getSystemService(AUDIO_SERVICE) as AudioManager
+                val d = when (args["d"]) {
+                    "mais" -> AudioManager.ADJUST_RAISE
+                    "menos" -> AudioManager.ADJUST_LOWER
+                    else -> AudioManager.ADJUST_TOGGLE_MUTE
+                }
+                am.adjustStreamVolume(AudioManager.STREAM_MUSIC, d, AudioManager.FLAG_SHOW_UI)
+                return "VOLUME " + am.getStreamVolume(AudioManager.STREAM_MUSIC) + "/" + am.getStreamMaxVolume(AudioManager.STREAM_MUSIC)
+            }
+            "tema" -> { proximoTema(); return "TEMA " + tela.tema.nome }
+            "abrir" -> {
+                if (!naFrente) trazerParaFrente()
+                return if (tela.abrirCartao(args["c"] ?: "")) "ABRINDO" else "NAO ACHEI"
+            }
+            "radio" -> {
+                val b = args["busca"]?.trim().orEmpty()
+                val p = tela.painel
+                if (p is TelaRadio && b.isNotEmpty()) p.buscar(b) else {
+                    TelaRadio.buscaPendente = b.ifEmpty { null }
+                    if (!naFrente) trazerParaFrente()
+                    tela.abrirCartao("radio")
+                }
+                return "BUSCANDO NA TV"
+            }
+            "texto" -> {
+                val s = args["t"]?.trim().orEmpty()
+                if (s.isEmpty()) return "VAZIO"
+                if (s.startsWith("http://") || s.startsWith("https://")) {
+                    return try {
+                        startActivity(Intent(Intent.ACTION_VIEW, Uri.parse(s)).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)); "ABRINDO O LINK"
+                    } catch (e: Exception) { "NENHUM APP ABRE ESSE LINK" }
+                }
+                val p = tela.painel
+                if (p is TelaRadio) { p.buscar(s); return "BUSCANDO RADIO" }
+                Toast.makeText(this, s, Toast.LENGTH_LONG).show()
+                return "MOSTRADO NA TV"
+            }
+            "tecla" -> {
+                val k = args["k"] ?: return "?"
+                if (k == "play") { Tocador.pausarOuContinuar(); return "PLAY/PAUSE" }
+                if (k == "home") {
+                    if (!naFrente) trazerParaFrente() else { while (tela.painel != null) tela.fecharPainel(); if (tela.egg) tela.fecharEgg() }
+                    return "INICIO"
+                }
+                if (!naFrente) {
+                    if (k == "back") {
+                        val a = Acessibilidade.ativo ?: return "ATIVE O SERVICO DE ACESSIBILIDADE (AJUSTES)"
+                        a.voltar(); return "VOLTAR"
+                    }
+                    return "OUTRO APP NA FRENTE: USE O CONTROLE DA TV"
+                }
+                if (k == "oklongo") {
+                    val p = tela.painel
+                    if (p != null && p !is Descanso) p.teclaLonga() else if (p == null && !tela.egg) proximoTema()
+                    tela.invalidate()
+                    return "OK SEGURADO"
+                }
+                val codigo = when (k) {
+                    "up" -> KeyEvent.KEYCODE_DPAD_UP
+                    "down" -> KeyEvent.KEYCODE_DPAD_DOWN
+                    "left" -> KeyEvent.KEYCODE_DPAD_LEFT
+                    "right" -> KeyEvent.KEYCODE_DPAD_RIGHT
+                    "ok" -> KeyEvent.KEYCODE_DPAD_CENTER
+                    "back" -> KeyEvent.KEYCODE_BACK
+                    "menu" -> KeyEvent.KEYCODE_MENU
+                    else -> return "?"
+                }
+                injetar(codigo)
+                return "OK"
+            }
+        }
+        return "?"
     }
 }

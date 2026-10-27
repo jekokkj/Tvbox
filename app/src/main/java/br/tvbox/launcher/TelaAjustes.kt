@@ -91,6 +91,16 @@ class TelaAjustes(private val v: LauncherView) : Painel {
             acao = { v.abrirPainel(Descanso(v, max(1, Config.descanso(ctx)))) }
         ))
         itens.add(Item(
+            "CONTROLE PELO CELULAR",
+            valor = { if (Servidor.rodando) "LIGADO" else "DESLIGADO" },
+            acao = { v.abrirPainel(TelaControle(v)) }
+        ))
+        itens.add(Item(
+            "VOLTAR PELO CELULAR EM OUTROS APPS",
+            valor = { if (Acessibilidade.ativo != null) "ATIVO" else "ATIVAR (ACESSIBILIDADE)" },
+            acao = { Acessibilidade.abrirConfiguracao(ctx) }
+        ))
+        itens.add(Item(
             "DEBLOAT: LIMPAR APPS INUTEIS",
             acao = { v.abrirPainel(TelaDebloat(v)) }
         ))

@@ -9,7 +9,7 @@ import kotlin.math.max
 object Desenho {
     // Letras que a PixelFont sabe desenhar (as acentuadas estao em \u para nao depender de codificacao).
     private const val PERMITIDOS =
-        "ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789:-./!?<>,|() ÁÉÍÓÚÂÊÔÃÕÇ"
+        "ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789:-./!?<>,|()%$+@#=_&'\" ÁÉÍÓÚÂÊÔÃÕÇ"
     private val SEM_ACENTO: Map<Char, Char> = mapOf(
         'À' to 'A', 'È' to 'E', 'Ì' to 'I', 'Ò' to 'O', 'Ù' to 'U',
         'Ä' to 'A', 'Ë' to 'E', 'Ï' to 'I', 'Ö' to 'O', 'Ü' to 'U',
