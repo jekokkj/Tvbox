@@ -23,7 +23,6 @@ import com.herohan.uvcapp.ICameraHelper
 import com.serenegiant.usb.IFrameCallback
 import com.serenegiant.usb.Size
 import com.serenegiant.usb.UVCCamera
-import com.serenegiant.usb.UVCParam
 import java.util.concurrent.atomic.AtomicLong
 
 /**
@@ -40,14 +39,14 @@ class MainActivity : Activity() {
 
     private var videoLarg = 960
     private var videoAlt = 544
-    private var tamanhoPendente: Size? = null
     private var tamanhoAtual: Size? = null
     private var dispositivo: UsbDevice? = null
     private var cameraAberta = false
 
-    // Compatibilidade USB (UVC_QUIRK_FIX_BANDWIDTH): o Vita manda video sem compressao em USB isocrono,
-    // e muitas TV boxes (MediaTek) abrem a camera mas nao recebem nenhum quadro sem esse ajuste.
-    private var bandaFixa = true
+    // Resolucao e FPS escolhidos (lembrados entre aberturas). O Vita manda NV12 sem compressao por USB bulk:
+    // 960x544 a 30 FPS sao ~23 MB/s, o que uma TV box aguenta; 60 FPS dobra isso.
+    private var resPreferida = "960x544"
+    private var fps = 30
 
     // Superficie do video: so e entregue a biblioteca depois de ter o tamanho final (senao ela desenha em 1x1 e fica preto).
     private var superficieAnexada = false
@@ -63,7 +62,9 @@ class MainActivity : Activity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         window.addFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
-        bandaFixa = getSharedPreferences("cfg", MODE_PRIVATE).getBoolean("bandaFixa", true)
+        val cfg = getSharedPreferences("cfg", MODE_PRIVATE)
+        resPreferida = cfg.getString("res", "960x544") ?: "960x544"
+        fps = cfg.getInt("fps", 30)
 
         raiz = FrameLayout(this)
         raiz.setBackgroundColor(0xFF000000.toInt())
@@ -97,7 +98,7 @@ class MainActivity : Activity() {
             tela,
             FrameLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT)
         )
-        tela.bandaFixa = bandaFixa
+        tela.fps = fps
         tela.aoAcao = { acao -> tratarAcao(acao) }
         setContentView(raiz)
         esconderBarras()
@@ -160,7 +161,6 @@ class MainActivity : Activity() {
 
     private fun pararCamera() {
         handler.removeCallbacksAndMessages(null)
-        tamanhoPendente = null
         cameraAberta = false
         superficieAnexada = false
         callbackFrames = null
@@ -180,16 +180,27 @@ class MainActivity : Activity() {
         }
     }
 
-    /** Escolhe a resolucao que o Vita oferece: a melhor para a tela dele primeiro, depois as menores. */
-    private fun melhorTamanho(lista: List<Size>?): Size? {
+    /**
+     * Escolhe a resolucao (a preferida, senao a tela nativa do Vita, senao a primeira) com o FPS pedido.
+     * So funciona com a camera ja aberta: antes disso a biblioteca devolve a lista vazia
+     * (era por isso que o Vita abria sempre em 1280x720).
+     */
+    private fun escolherTamanho(lista: List<Size>?): Size? {
         if (lista == null || lista.isEmpty()) return null
-        val preferidas = listOf(960 to 544, 864 to 488, 896 to 504, 480 to 272, 1280 to 720)
-        for ((l, a) in preferidas) {
-            val achado = lista.firstOrNull { it.width == l && it.height == a }
-            if (achado != null) return achado
+        val ordem = listOf(resPreferida, "960x544", "864x488", "896x504", "480x272", "1280x720")
+        var achado: Size? = null
+        for (r in ordem) {
+            achado = lista.firstOrNull { "${it.width}x${it.height}" == r }
+            if (achado != null) break
         }
-        return lista[0]
+        val s = (achado ?: lista[0]).clone()
+        val opcoes = s.fpsList ?: emptyList<Int>()
+        if (opcoes.contains(fps)) s.fps = fps else if (opcoes.isNotEmpty()) s.fps = opcoes.minOrNull() ?: s.fps
+        return s
     }
+
+    private fun mesmoTamanho(a: Size?, b: Size?) =
+        a != null && b != null && a.width == b.width && a.height == b.height && a.fps == b.fps && a.type == b.type
 
     private val callback = object : ICameraHelper.StateCallback {
         override fun onAttach(device: UsbDevice) {
@@ -200,22 +211,20 @@ class MainActivity : Activity() {
 
         override fun onDeviceOpen(device: UsbDevice, isFirstOpen: Boolean) {
             dispositivo = device
-            val h = helper ?: return
-            // Abre sempre numa resolucao que o Vita realmente oferece (o tamanho padrao da biblioteca, 640x480, ele nao tem).
-            val escolhido = tamanhoPendente ?: melhorTamanho(h.supportedSizeList)
-            tamanhoPendente = null
-            if (escolhido != null) {
-                val quirks = if (bandaFixa) UVCCamera.UVC_QUIRK_FIX_BANDWIDTH else 0
-                h.openCamera(UVCParam(escolhido, quirks))
-            } else {
-                h.openCamera()
-            }
+            // A lista de resolucoes so existe depois de abrir: abre no padrao e troca em onCameraOpen.
+            helper?.openCamera()
         }
 
         override fun onCameraOpen(device: UsbDevice) {
             val h = helper ?: return
+            var tamanho = h.previewSize
+            val desejado = escolherTamanho(h.supportedSizeList)
+            if (desejado != null && !mesmoTamanho(desejado, tamanho)) {
+                // Fila do CameraHelper: troca o tamanho e so depois comeca o video.
+                h.setPreviewSize(desejado)
+                tamanho = desejado
+            }
             h.startPreview()
-            val tamanho = h.previewSize
             if (tamanho != null) {
                 tamanhoAtual = tamanho
                 videoLarg = tamanho.width
@@ -238,12 +247,7 @@ class MainActivity : Activity() {
                 helper?.removeSurface(superficie.holder.surface)
                 superficieAnexada = false
             }
-            if (tamanhoPendente != null) {
-                // Troca de resolucao: reabre o dispositivo e abre a camera ja no tamanho novo.
-                helper?.selectDevice(device)
-            } else {
-                runOnUiThread { tela.estado = Estado.CONECTANDO }
-            }
+            runOnUiThread { tela.estado = Estado.CONECTANDO }
         }
 
         override fun onDeviceClose(device: UsbDevice) {}
@@ -308,21 +312,19 @@ class MainActivity : Activity() {
                 helper?.closeCamera()
                 tela.estado = Estado.AGUARDANDO
             }
-            "compat" -> alternarCompatibilidade()
+            "fps" -> alternarFps()
             "diag" -> abrirDiagnostico()
             "diag-fechar" -> handler.removeCallbacks(atualizarDiag)
         }
     }
 
-    /** Liga/desliga o ajuste de banda e reabre a camera no mesmo tamanho. */
-    private fun alternarCompatibilidade() {
-        bandaFixa = !bandaFixa
-        tela.bandaFixa = bandaFixa
-        getSharedPreferences("cfg", MODE_PRIVATE).edit().putBoolean("bandaFixa", bandaFixa).apply()
+    /** Alterna 30/60 FPS e aplica na hora (para o video, troca o tamanho e recomeca). */
+    private fun alternarFps() {
+        fps = if (fps == 30) 60 else 30
+        tela.fps = fps
+        getSharedPreferences("cfg", MODE_PRIVATE).edit().putInt("fps", fps).apply()
         tela.invalidate()
-        val h = helper ?: return
-        tamanhoPendente = tamanhoAtual
-        if (tamanhoPendente != null && cameraAberta) h.closeCamera() else aviso("REABRA O VITA LINK PARA APLICAR")
+        aplicarTamanho()
     }
 
     private fun trocarResolucao(direcao: Int) {
@@ -334,8 +336,26 @@ class MainActivity : Activity() {
         }
         var atual = lista.indexOfFirst { it.width == videoLarg && it.height == videoAlt }
         if (atual < 0) atual = 0
-        tamanhoPendente = lista[(atual + direcao + lista.size) % lista.size]
-        h.closeCamera()
+        val novo = lista[(atual + direcao + lista.size) % lista.size]
+        resPreferida = "${novo.width}x${novo.height}"
+        getSharedPreferences("cfg", MODE_PRIVATE).edit().putString("res", resPreferida).apply()
+        aplicarTamanho()
+    }
+
+    /** Aplica [resPreferida] e [fps] com o video rodando. */
+    private fun aplicarTamanho() {
+        val h = helper ?: return
+        if (!cameraAberta) return
+        val desejado = escolherTamanho(h.supportedSizeList) ?: return
+        h.stopPreview()
+        h.setPreviewSize(desejado)
+        h.startPreview()
+        tamanhoAtual = desejado
+        videoLarg = desejado.width
+        videoAlt = desejado.height
+        tela.resolucao = "${videoLarg}X$videoAlt"
+        tela.estado = Estado.TRANSMITINDO
+        ajustarSuperficie()
     }
 
     /** Encaixa o video na tela (AJUSTAR mantem a proporcao; ESTICAR preenche tudo). */
@@ -405,7 +425,18 @@ class MainActivity : Activity() {
         val t = tamanhoAtual
         l.add("TAMANHO ATUAL: " + (if (t != null) "${t.width}X${t.height} A ${t.fps} FPS TIPO ${t.type}" else "NENHUM"))
         l.add("SUPERFICIE: ${superficieLarg}X$superficieAlt ENTREGUE: " + (if (superficieAnexada) "SIM" else "NAO"))
-        l.add("COMPATIBILIDADE USB: " + (if (bandaFixa) "BANDA FIXA LIGADA" else "PADRAO"))
+        // Contadores da biblioteca nativa corrigida (ver vita/tools/tvbox_uvc.h): mostram em que etapa o video para.
+        try {
+            val n = UVCCamera.nativeTvboxStats()
+            if (n != null && n.size >= 15) {
+                l.add("USB: ${n[0]} LEITURAS DE ${n[7]} BYTES  ERROS ${n[4]}  INICIOS ${n[14]}")
+                l.add("PAYLOADS: ${n[1]} (ULTIMO ${n[2]} BYTES, FLAGS ${java.lang.Long.toHexString(n[6])})  DESCARTADOS ${n[3]}")
+                l.add("QUADROS MONTADOS: ${n[5]}  CONVERTIDOS: ${n[8]}  RECUSADOS: ${n[9]}")
+                l.add("ULTIMO QUADRO: FORMATO ${n[10]} ${n[12]}X${n[13]} ${n[11]} BYTES")
+            }
+        } catch (e: Throwable) {
+            l.add("CONTADORES NATIVOS INDISPONIVEIS")
+        }
         val h = helper
         try {
             val formatos = h?.supportedFormatList
