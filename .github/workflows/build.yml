@@ -68,6 +68,9 @@ jobs:
           echo "KS_ALIAS=$ALIAS" >> "$GITHUB_ENV"
           echo "alias da chave: $ALIAS"
 
+      - name: Biblioteca de camera USB com suporte a NV12
+        run: bash vita/tools/preparar_uvc.sh
+
       - name: Compilar
         working-directory: vita
         env:

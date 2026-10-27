@@ -12,8 +12,8 @@ android {
         // 24 = Android 7.0. O audio usa AudioTrack (JNI) em vez do AAudio, que exige API 26.
         minSdk = 24
         targetSdk = 36
-        versionCode = 2
-        versionName = "0.1.1"
+        versionCode = 3
+        versionName = "1.0"
 
         // The native core is built for exactly these ABIs (see .github/workflows/build.yml).
         ndk {

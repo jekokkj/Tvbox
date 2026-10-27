@@ -14,3 +14,4 @@ dependencyResolutionManagement {
 }
 rootProject.name = "vitalink"
 include(":app")
+include(":uvc")

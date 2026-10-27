@@ -72,7 +72,7 @@ class Prefs(context: Context) {
         const val DEFAULT_BITRATE = 320
 
         /**
-         * "Spotlet (<device name>)", using the name set in Android's About screen, else the model.
+         * "TV Spotify (<device name>)", using the name set in Android's About screen, else the model.
          * Not persisted, so it follows the device name until the user sets their own.
          */
         fun defaultDeviceName(context: Context): String {
@@ -80,7 +80,7 @@ class Prefs(context: Context) {
                 Settings.Global.getString(context.contentResolver, Settings.Global.DEVICE_NAME)
             }.getOrNull()?.trim()?.takeIf { it.isNotEmpty() }
                 ?: Build.MODEL?.trim()?.takeIf { it.isNotEmpty() }
-            return if (device != null) "Spotlet ($device)" else "Spotlet"
+            return if (device != null) "TV Spotify ($device)" else "TV Spotify"
         }
     }
 }

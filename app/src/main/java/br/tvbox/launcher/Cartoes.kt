@@ -31,8 +31,8 @@ val CARTOES = listOf(
     ),
     Cartao(
         icone = "spotify", rotulo = "SPOTIFY", descricao = "SPOTIFY CONNECT (RECEPTOR)",
-        // Spotlet: a caixa vira um alto-falante no app do Spotify do celular (precisa de conta Premium).
-        pacotes = listOf("fi.qvr.spotlet", "com.spotify.tv.android", "com.spotify.music"),
+        // TV Spotify (receptor proprio, br.tvbox.spotify): a caixa vira um alto-falante no app do Spotify do celular (precisa de conta Premium).
+        pacotes = listOf("br.tvbox.spotify", "fi.qvr.spotlet", "com.spotify.tv.android", "com.spotify.music"),
         web = "https://github.com/qvr/spotlet/releases/latest"
     ),
     Cartao(

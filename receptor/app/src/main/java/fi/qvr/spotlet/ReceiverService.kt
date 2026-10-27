@@ -629,6 +629,30 @@ class ReceiverService : Service() {
                 svc.track?.title, svc.track?.artist, svc.track?.isPlaying == true)
         }
 
+        /** Situacao para a tela pixelada: -1 sem motor nativo, 0 parado, 1 iniciando, 2 aguardando, 3 conectado. */
+        fun situacao(): Int {
+            val svc = active ?: return 0
+            return when {
+                !NativeBridge.loaded -> -1
+                svc.started == null -> 1
+                svc.connectedUser != null -> 3
+                else -> 2
+            }
+        }
+
+        /** Comandos de reproducao vindos da tela: "play", "pause", "next", "prev". */
+        fun comando(context: Context, nome: String) {
+            val acao = when (nome) {
+                "play" -> ACTION_PLAY
+                "pause" -> ACTION_PAUSE
+                "next" -> ACTION_NEXT
+                "prev" -> ACTION_PREVIOUS
+                else -> return
+            }
+            if (active == null) return
+            ContextCompat.startForegroundService(context, Intent(context, ReceiverService::class.java).setAction(acao))
+        }
+
         /** One-line human status for the settings screen. */
         fun status(context: Context): String =
             active?.let { svc -> svc.track?.let { "${svc.statusLine()} — ${it.title} · ${it.artist}" } ?: svc.statusLine() }

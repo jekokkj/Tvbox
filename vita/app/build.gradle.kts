@@ -11,8 +11,8 @@ android {
         applicationId = "br.tvbox.vita"
         minSdk = 21
         targetSdk = 34
-        versionCode = 1
-        versionName = "1.0"
+        versionCode = 4
+        versionName = "1.4"
     }
 
     signingConfigs {
@@ -48,5 +48,5 @@ android {
 
 dependencies {
     // Acesso a cameras UVC (a tela do Vita aparece como uma webcam USB) sem root.
-    implementation("com.herohan:UVCAndroid:1.0.13")
+    implementation(project(":uvc"))
 }
