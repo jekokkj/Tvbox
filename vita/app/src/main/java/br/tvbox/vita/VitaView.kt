@@ -68,8 +68,9 @@ class VitaView(ctx: Context) : View(ctx) {
         estado == Estado.TRANSMITINDO -> listOf(
             "RESOLUÇÃO: $resolucao",
             "PROPORÇÃO: " + (if (esticar) "ESTICAR" else "AJUSTAR"),
-+
-+            "DESCONECTAR",
+            "USB: " + (if (bandaFixa) "BANDA FIXA" else "PADR\u00C3O"),
+            "DIAGNOSTICO",
+            "DESCONECTAR",
             "VOLTAR"
         )
         else -> listOf("TENTAR DE NOVO", "COMO CONECTAR", "DIAGNOSTICO", "SAIR")
