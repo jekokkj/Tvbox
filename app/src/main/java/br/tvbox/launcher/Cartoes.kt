@@ -30,10 +30,10 @@ val CARTOES = listOf(
         web = "https://github.com/yuliskov/SmartTube/releases"
     ),
     Cartao(
-        icone = "spotify", rotulo = "SPOTIFY", descricao = "MÚSICA E PODCASTS",
-        pacotes = listOf("com.spotify.tv.android", "com.spotify.music"),
-        loja = "com.spotify.music",
-        web = "https://www.spotify.com/download/android/"
+        icone = "spotify", rotulo = "SPOTIFY", descricao = "SPOTIFY CONNECT (RECEPTOR)",
+        // Spotlet: a caixa vira um alto-falante no app do Spotify do celular (precisa de conta Premium).
+        pacotes = listOf("fi.qvr.spotlet", "com.spotify.tv.android", "com.spotify.music"),
+        web = "https://github.com/qvr/spotlet/releases/latest"
     ),
     Cartao(
         icone = "jogos", rotulo = "JOGOS", descricao = "PS VITA E RETRÔ",
