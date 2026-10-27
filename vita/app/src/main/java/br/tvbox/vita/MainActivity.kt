@@ -56,7 +56,7 @@ class MainActivity : Activity() {
     // Diagnostico.
     private val frames = AtomicLong(0)
     private var framesAntes = 0L
-    private var fps = 0L
+    private var fpsDiag = 0L
     private var callbackFrames: IFrameCallback? = null
 
     override fun onCreate(savedInstanceState: Bundle?) {
@@ -397,7 +397,7 @@ class MainActivity : Activity() {
     private val atualizarDiag = object : Runnable {
         override fun run() {
             val agora = frames.get()
-            fps = (agora - framesAntes) * 2L
+            fpsDiag = (agora - framesAntes) * 2L
             framesAntes = agora
             tela.diagLinhas = montarDiagnostico(agora)
             tela.invalidate()
@@ -415,7 +415,7 @@ class MainActivity : Activity() {
     private fun montarDiagnostico(totalFrames: Long): List<String> {
         val l = ArrayList<String>()
         val d = dispositivo
-        l.add("FRAMES RECEBIDOS: $totalFrames (${fps} POR SEGUNDO)")
+        l.add("FRAMES RECEBIDOS: $totalFrames (${fpsDiag} POR SEGUNDO)")
         l.add("CAMERA ABERTA: " + (if (cameraAberta) "SIM" else "NAO") + "  ESTADO: " + tela.estado.name)
         if (d != null) {
             l.add("DISPOSITIVO: ${d.productName ?: "?"}  ID ${java.lang.Integer.toHexString(d.vendorId)}:${java.lang.Integer.toHexString(d.productId)}")
