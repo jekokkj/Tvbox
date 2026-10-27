@@ -20,7 +20,10 @@ import android.widget.Toast
 import com.herohan.uvcapp.CameraException
 import com.herohan.uvcapp.CameraHelper
 import com.herohan.uvcapp.ICameraHelper
+import com.serenegiant.usb.IFrameCallback
 import com.serenegiant.usb.Size
+import com.serenegiant.usb.UVCCamera
+import java.util.concurrent.atomic.AtomicLong
 
 /**
  * Vita Link: mostra a tela do PS Vita (plugin UDCD UVC, que faz o console aparecer como webcam USB).
@@ -37,7 +40,20 @@ class MainActivity : Activity() {
     private var videoLarg = 960
     private var videoAlt = 544
     private var tamanhoPendente: Size? = null
-    private var indiceTamanho = 0
+    private var tamanhoAtual: Size? = null
+    private var dispositivo: UsbDevice? = null
+    private var cameraAberta = false
+
+    // Superficie do video: so e entregue a biblioteca depois de ter o tamanho final (senao ela desenha em 1x1 e fica preto).
+    private var superficieAnexada = false
+    private var superficieLarg = 0
+    private var superficieAlt = 0
+
+    // Diagnostico.
+    private val frames = AtomicLong(0)
+    private var framesAntes = 0L
+    private var fps = 0L
+    private var callbackFrames: IFrameCallback? = null
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -46,17 +62,27 @@ class MainActivity : Activity() {
         raiz = FrameLayout(this)
         raiz.setBackgroundColor(0xFF000000.toInt())
 
+        // A superficie nasce em tela cheia (a VitaView cobre tudo enquanto nao ha video).
         superficie = SurfaceView(this)
-        raiz.addView(superficie, FrameLayout.LayoutParams(1, 1, Gravity.CENTER))
+        raiz.addView(
+            superficie,
+            FrameLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT, Gravity.CENTER)
+        )
         superficie.holder.addCallback(object : SurfaceHolder.Callback {
-            override fun surfaceCreated(holder: SurfaceHolder) {
-                helper?.addSurface(holder.surface, false)
+            override fun surfaceCreated(holder: SurfaceHolder) {}
+
+            override fun surfaceChanged(holder: SurfaceHolder, format: Int, width: Int, height: Int) {
+                superficieLarg = width
+                superficieAlt = height
+                // O tamanho mudou (ajuste de proporcao ou troca de resolucao): entrega de novo com o tamanho certo.
+                if (cameraAberta) reanexar()
             }
 
-            override fun surfaceChanged(holder: SurfaceHolder, format: Int, width: Int, height: Int) {}
-
             override fun surfaceDestroyed(holder: SurfaceHolder) {
-                helper?.removeSurface(holder.surface)
+                if (superficieAnexada) {
+                    helper?.removeSurface(holder.surface)
+                    superficieAnexada = false
+                }
             }
         })
 
@@ -128,6 +154,9 @@ class MainActivity : Activity() {
     private fun pararCamera() {
         handler.removeCallbacksAndMessages(null)
         tamanhoPendente = null
+        cameraAberta = false
+        superficieAnexada = false
+        callbackFrames = null
         helper?.release()
         helper = null
         tela.estado = Estado.AGUARDANDO
@@ -144,16 +173,31 @@ class MainActivity : Activity() {
         }
     }
 
+    /** Escolhe a resolucao que o Vita oferece: a melhor para a tela dele primeiro, depois as menores. */
+    private fun melhorTamanho(lista: List<Size>?): Size? {
+        if (lista == null || lista.isEmpty()) return null
+        val preferidas = listOf(960 to 544, 864 to 488, 896 to 504, 480 to 272, 1280 to 720)
+        for ((l, a) in preferidas) {
+            val achado = lista.firstOrNull { it.width == l && it.height == a }
+            if (achado != null) return achado
+        }
+        return lista[0]
+    }
+
     private val callback = object : ICameraHelper.StateCallback {
         override fun onAttach(device: UsbDevice) {
+            dispositivo = device
             runOnUiThread { tela.estado = Estado.CONECTANDO }
             helper?.selectDevice(device)
         }
 
         override fun onDeviceOpen(device: UsbDevice, isFirstOpen: Boolean) {
-            val s = tamanhoPendente
+            dispositivo = device
+            val h = helper ?: return
+            // Abre sempre numa resolucao que o Vita realmente oferece (o tamanho padrao da biblioteca, 640x480, ele nao tem).
+            val escolhido = tamanhoPendente ?: melhorTamanho(h.supportedSizeList)
             tamanhoPendente = null
-            if (s != null) helper?.openCamera(s) else helper?.openCamera()
+            if (escolhido != null) h.openCamera(escolhido) else h.openCamera()
         }
 
         override fun onCameraOpen(device: UsbDevice) {
@@ -161,19 +205,27 @@ class MainActivity : Activity() {
             h.startPreview()
             val tamanho = h.previewSize
             if (tamanho != null) {
+                tamanhoAtual = tamanho
                 videoLarg = tamanho.width
                 videoAlt = tamanho.height
             }
-            h.addSurface(superficie.holder.surface, false)
+            cameraAberta = true
             runOnUiThread {
                 tela.resolucao = "${videoLarg}X$videoAlt"
-                ajustarSuperficie()
                 tela.estado = Estado.TRANSMITINDO
+                ajustarSuperficie()
+                // Se o tamanho da superficie nao mudou, nao chega surfaceChanged: garante a entrega.
+                handler.postDelayed({ if (cameraAberta && !superficieAnexada) reanexar() }, 400L)
             }
+            if (callbackFrames != null) registrarContadorDeFrames()
         }
 
         override fun onCameraClose(device: UsbDevice) {
-            helper?.removeSurface(superficie.holder.surface)
+            cameraAberta = false
+            if (superficieAnexada) {
+                helper?.removeSurface(superficie.holder.surface)
+                superficieAnexada = false
+            }
             if (tamanhoPendente != null) {
                 // Troca de resolucao: reabre o dispositivo e abre a camera ja no tamanho novo.
                 helper?.selectDevice(device)
@@ -185,6 +237,8 @@ class MainActivity : Activity() {
         override fun onDeviceClose(device: UsbDevice) {}
 
         override fun onDetach(device: UsbDevice) {
+            cameraAberta = false
+            superficieAnexada = false
             runOnUiThread {
                 tela.estado = Estado.AGUARDANDO
                 ajustarSuperficie()
@@ -203,6 +257,20 @@ class MainActivity : Activity() {
                 tela.erro = "FALHA NA CÂMERA (CÓDIGO ${e.code}). DESCONECTE E CONECTE O CABO"
                 tela.estado = Estado.ERRO
             }
+        }
+    }
+
+    /** Entrega (ou entrega de novo) a superficie do video a biblioteca, ja com o tamanho final. */
+    private fun reanexar() {
+        val h = helper ?: return
+        val s = superficie.holder.surface
+        if (superficieAnexada) {
+            h.removeSurface(s)
+            superficieAnexada = false
+        }
+        if (cameraAberta && s != null && s.isValid && superficieLarg > 1 && superficieAlt > 1) {
+            h.addSurface(s, false)
+            superficieAnexada = true
         }
     }
 
@@ -228,6 +296,8 @@ class MainActivity : Activity() {
                 helper?.closeCamera()
                 tela.estado = Estado.AGUARDANDO
             }
+            "diag" -> abrirDiagnostico()
+            "diag-fechar" -> handler.removeCallbacks(atualizarDiag)
         }
     }
 
@@ -239,9 +309,8 @@ class MainActivity : Activity() {
             return
         }
         var atual = lista.indexOfFirst { it.width == videoLarg && it.height == videoAlt }
-        if (atual < 0) atual = indiceTamanho
-        indiceTamanho = (atual + direcao + lista.size) % lista.size
-        tamanhoPendente = lista[indiceTamanho]
+        if (atual < 0) atual = 0
+        tamanhoPendente = lista[(atual + direcao + lista.size) % lista.size]
         h.closeCamera()
     }
 
@@ -250,12 +319,9 @@ class MainActivity : Activity() {
         val larguraTela = raiz.width
         val alturaTela = raiz.height
         val lp = superficie.layoutParams as FrameLayout.LayoutParams
-        if (tela.estado != Estado.TRANSMITINDO || larguraTela == 0 || alturaTela == 0) {
-            lp.width = 1
-            lp.height = 1
-        } else if (tela.esticar) {
-            lp.width = larguraTela
-            lp.height = alturaTela
+        if (tela.estado != Estado.TRANSMITINDO || larguraTela == 0 || alturaTela == 0 || tela.esticar) {
+            lp.width = ViewGroup.LayoutParams.MATCH_PARENT
+            lp.height = ViewGroup.LayoutParams.MATCH_PARENT
         } else {
             val proporcaoVideo = videoLarg.toFloat() / videoAlt.toFloat()
             val proporcaoTela = larguraTela.toFloat() / alturaTela.toFloat()
@@ -269,6 +335,66 @@ class MainActivity : Activity() {
         }
         lp.gravity = Gravity.CENTER
         superficie.layoutParams = lp
+        if (cameraAberta) handler.postDelayed({ if (cameraAberta) reanexar() }, 250L)
+    }
+
+    // ------------------------------------------------------------------ diagnostico
+
+    private fun registrarContadorDeFrames() {
+        val h = helper ?: return
+        val cb = callbackFrames ?: IFrameCallback { frames.incrementAndGet() }.also { callbackFrames = it }
+        try {
+            h.setFrameCallback(cb, UVCCamera.PIXEL_FORMAT_NV21)
+        } catch (e: Exception) {
+            // sem contador de frames: o diagnostico mostra o restante
+        }
+    }
+
+    private val atualizarDiag = object : Runnable {
+        override fun run() {
+            val agora = frames.get()
+            fps = (agora - framesAntes) * 2L
+            framesAntes = agora
+            tela.diagLinhas = montarDiagnostico(agora)
+            tela.invalidate()
+            handler.postDelayed(this, 500L)
+        }
+    }
+
+    private fun abrirDiagnostico() {
+        framesAntes = frames.get()
+        if (cameraAberta) registrarContadorDeFrames() else if (callbackFrames == null) callbackFrames = IFrameCallback { frames.incrementAndGet() }
+        handler.removeCallbacks(atualizarDiag)
+        atualizarDiag.run()
+    }
+
+    private fun montarDiagnostico(totalFrames: Long): List<String> {
+        val l = ArrayList<String>()
+        val d = dispositivo
+        l.add("FRAMES RECEBIDOS: $totalFrames (${fps} POR SEGUNDO)")
+        l.add("CAMERA ABERTA: " + (if (cameraAberta) "SIM" else "NAO") + "  ESTADO: " + tela.estado.name)
+        if (d != null) {
+            l.add("DISPOSITIVO: ${d.productName ?: "?"}  ID ${java.lang.Integer.toHexString(d.vendorId)}:${java.lang.Integer.toHexString(d.productId)}")
+        } else {
+            l.add("DISPOSITIVO: NENHUM")
+        }
+        val t = tamanhoAtual
+        l.add("TAMANHO ATUAL: " + (if (t != null) "${t.width}X${t.height} A ${t.fps} FPS TIPO ${t.type}" else "NENHUM"))
+        l.add("SUPERFICIE: ${superficieLarg}X$superficieAlt ENTREGUE: " + (if (superficieAnexada) "SIM" else "NAO"))
+        val h = helper
+        try {
+            val formatos = h?.supportedFormatList
+            if (formatos != null) {
+                for (f in formatos) l.add("FORMATO ${f.index} TIPO ${f.type}: ${f.frameDescriptors?.size ?: 0} TAMANHOS")
+            }
+            val tamanhos = h?.supportedSizeList
+            if (tamanhos != null) {
+                for (s in tamanhos.take(8)) l.add("OFERECE ${s.width}X${s.height} A ${s.fps} FPS TIPO ${s.type}")
+            }
+        } catch (e: Exception) {
+            l.add("LISTA DE FORMATOS INDISPONIVEL")
+        }
+        return l
     }
 
     private fun aviso(msg: String) {

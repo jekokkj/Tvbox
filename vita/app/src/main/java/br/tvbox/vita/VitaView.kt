@@ -33,6 +33,10 @@ class VitaView(ctx: Context) : View(ctx) {
     var resolucao: String = "--"
     var esticar: Boolean = false
 
+    /** Tela de diagnostico (o que a caixa recebeu do Vita): linhas de texto preenchidas pela MainActivity. */
+    var diagAberto: Boolean = false
+    var diagLinhas: List<String> = emptyList()
+
     /** Acoes: "retry", "sair", "res-", "res+", "proporcao", "desconectar". */
     var aoAcao: ((String) -> Unit)? = null
 
@@ -61,10 +65,10 @@ class VitaView(ctx: Context) : View(ctx) {
         estado == Estado.TRANSMITINDO -> listOf(
             "RESOLUÇÃO: $resolucao",
             "PROPORÇÃO: " + (if (esticar) "ESTICAR" else "AJUSTAR"),
-            "DESCONECTAR",
+            "DIAGNOSTICO",
             "VOLTAR"
         )
-        else -> listOf("TENTAR DE NOVO", "COMO CONECTAR", "SAIR")
+        else -> listOf("TENTAR DE NOVO", "COMO CONECTAR", "DIAGNOSTICO", "SAIR")
     }
 
     private fun ehOk(k: Int) =
@@ -72,6 +76,12 @@ class VitaView(ctx: Context) : View(ctx) {
 
     /** Devolve true se a tecla foi tratada aqui. */
     fun tecla(k: Int): Boolean {
+        if (diagAberto) {
+            diagAberto = false
+            aoAcao?.invoke("diag-fechar")
+            invalidate()
+            return true
+        }
         if (ajuda) {
             ajuda = false
             invalidate()
@@ -112,6 +122,7 @@ class VitaView(ctx: Context) : View(ctx) {
             item == "VOLTAR" -> menuAberto = false
             item == "TENTAR DE NOVO" -> aoAcao?.invoke("retry")
             item == "COMO CONECTAR" -> ajuda = true
+            item == "DIAGNOSTICO" -> { menuAberto = false; diagAberto = true; aoAcao?.invoke("diag") }
             item == "SAIR" -> aoAcao?.invoke("sair")
         }
     }
@@ -123,6 +134,13 @@ class VitaView(ctx: Context) : View(ctx) {
         val h = height.toFloat()
         if (w == 0f || h == 0f) return
         val agora = System.currentTimeMillis()
+
+        if (diagAberto) {
+            desenharFundo(cv, w, h, agora - t0)
+            desenharDiag(cv, w, h)
+            postInvalidateDelayed(250)
+            return
+        }
 
         if (estado == Estado.TRANSMITINDO) {
             // Transparente: o video aparece por tras. So o aviso de resolucao e o menu ficam por cima.
@@ -242,13 +260,21 @@ class VitaView(ctx: Context) : View(ctx) {
         Desenho.centro(cv, "◀▶ ESCOLHER | OK CONFIRMAR | VOLTAR SAIR", w / 2f, h * 0.945f, max(1, (cc * 0.5f).toInt()), apagado)
     }
 
-    private fun desenharMenuHorizontal(cv: Canvas, w: Float, h: Float, tc: Int) {
+    private fun desenharMenuHorizontal(cv: Canvas, w: Float, h: Float, tcBase: Int) {
         val lista = itens()
+        // Diminui a letra ate o menu inteiro caber na largura da tela.
+        var tc = tcBase
+        var gap = w * 0.02f
+        var total = 0f
+        while (true) {
+            total = gap * (lista.size - 1)
+            for (s in lista) total += PixelFont.largura(s, tc) + tc * 8f
+            if (total <= w * 0.92f || tc <= 1) break
+            tc -= 1
+            gap = w * 0.015f
+        }
         val altura = 7 * tc + tc * 4f
         val y = h * 0.80f
-        val gap = w * 0.02f
-        var total = gap * (lista.size - 1)
-        for (s in lista) total += PixelFont.largura(s, tc) + tc * 8f
         var x = w / 2f - total / 2f
         for ((i, s) in lista.withIndex()) {
             val larg = PixelFont.largura(s, tc) + tc * 8f
@@ -263,6 +289,22 @@ class VitaView(ctx: Context) : View(ctx) {
         }
     }
 
+    // ---------------- diagnostico
+
+    private fun desenharDiag(cv: Canvas, w: Float, h: Float) {
+        val cc = max(2, (w * 0.0055f).toInt())
+        val tc = max(2, (cc * 0.75f).toInt())
+        PixelFont.desenhar(cv, "\u25B6 DIAGN\u00D3STICO", w * 0.06f, h * 0.05f, tc, ciano, sombra)
+        val linhas = diagLinhas.map { Desenho.limpar(it, 60) }
+        val maior = max(20, linhas.maxOfOrNull { it.length } ?: 20)
+        val c = max(1, min((w * 0.88f / (maior * 6f)).toInt(), (h * 0.80f / (max(1, linhas.size) * 11f)).toInt()))
+        var y = h * 0.14f
+        for (l in linhas) {
+            PixelFont.desenhar(cv, l, w * 0.06f, y, c, if (l.startsWith("FRAMES")) branco else apagado, sombra)
+            y += 7 * c + c * 4f
+        }
+        Desenho.centro(cv, "QUALQUER TECLA VOLTA", w / 2f, h * 0.95f, max(1, (cc * 0.5f).toInt()), apagado)
+    }
     // ---------------- ajuda
 
     private fun desenharAjuda(cv: Canvas, w: Float, h: Float) {
