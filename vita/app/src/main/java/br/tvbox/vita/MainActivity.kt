@@ -23,6 +23,7 @@ import com.herohan.uvcapp.ICameraHelper
 import com.serenegiant.usb.IFrameCallback
 import com.serenegiant.usb.Size
 import com.serenegiant.usb.UVCCamera
+import com.serenegiant.usb.UVCParam
 import java.util.concurrent.atomic.AtomicLong
 
 /**
@@ -44,6 +45,10 @@ class MainActivity : Activity() {
     private var dispositivo: UsbDevice? = null
     private var cameraAberta = false
 
+    // Compatibilidade USB (UVC_QUIRK_FIX_BANDWIDTH): o Vita manda video sem compressao em USB isocrono,
+    // e muitas TV boxes (MediaTek) abrem a camera mas nao recebem nenhum quadro sem esse ajuste.
+    private var bandaFixa = true
+
     // Superficie do video: so e entregue a biblioteca depois de ter o tamanho final (senao ela desenha em 1x1 e fica preto).
     private var superficieAnexada = false
     private var superficieLarg = 0
@@ -58,6 +63,7 @@ class MainActivity : Activity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         window.addFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
+        bandaFixa = getSharedPreferences("cfg", MODE_PRIVATE).getBoolean("bandaFixa", true)
 
         raiz = FrameLayout(this)
         raiz.setBackgroundColor(0xFF000000.toInt())
@@ -91,6 +97,7 @@ class MainActivity : Activity() {
             tela,
             FrameLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT)
         )
+        tela.bandaFixa = bandaFixa
         tela.aoAcao = { acao -> tratarAcao(acao) }
         setContentView(raiz)
         esconderBarras()
@@ -197,7 +204,7 @@ class MainActivity : Activity() {
             // Abre sempre numa resolucao que o Vita realmente oferece (o tamanho padrao da biblioteca, 640x480, ele nao tem).
             val escolhido = tamanhoPendente ?: melhorTamanho(h.supportedSizeList)
             tamanhoPendente = null
-            if (escolhido != null) h.openCamera(escolhido) else h.openCamera()
+            if (escolhido != null) {
         }
 
         override fun onCameraOpen(device: UsbDevice) {
@@ -296,9 +303,21 @@ class MainActivity : Activity() {
                 helper?.closeCamera()
                 tela.estado = Estado.AGUARDANDO
             }
+            "compat" -> alternarCompatibilidade()
             "diag" -> abrirDiagnostico()
             "diag-fechar" -> handler.removeCallbacks(atualizarDiag)
         }
+    }
+
+    /** Liga/desliga o ajuste de banda e reabre a camera no mesmo tamanho. */
+    private fun alternarCompatibilidade() {
+        bandaFixa = !bandaFixa
+        tela.bandaFixa = bandaFixa
+        getSharedPreferences("cfg", MODE_PRIVATE).edit().putBoolean("bandaFixa", bandaFixa).apply()
+        tela.invalidate()
+        val h = helper ?: return
+        tamanhoPendente = tamanhoAtual
+        if (tamanhoPendente != null && cameraAberta) h.closeCamera() else aviso("REABRA O VITA LINK PARA APLICAR")
     }
 
     private fun trocarResolucao(direcao: Int) {
@@ -381,6 +400,7 @@ class MainActivity : Activity() {
         val t = tamanhoAtual
         l.add("TAMANHO ATUAL: " + (if (t != null) "${t.width}X${t.height} A ${t.fps} FPS TIPO ${t.type}" else "NENHUM"))
         l.add("SUPERFICIE: ${superficieLarg}X$superficieAlt ENTREGUE: " + (if (superficieAnexada) "SIM" else "NAO"))
+        l.add("COMPATIBILIDADE USB: " + (if (bandaFixa) "BANDA FIXA LIGADA" else "PADRAO"))
         val h = helper
         try {
             val formatos = h?.supportedFormatList

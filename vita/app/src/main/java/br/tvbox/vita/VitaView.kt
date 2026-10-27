@@ -33,6 +33,9 @@ class VitaView(ctx: Context) : View(ctx) {
     var resolucao: String = "--"
     var esticar: Boolean = false
 
+    /** Compatibilidade USB: ajuste de banda para video sem compressao (necessario em muitas TV boxes). */
+    var bandaFixa: Boolean = true
+
     /** Tela de diagnostico (o que a caixa recebeu do Vita): linhas de texto preenchidas pela MainActivity. */
     var diagAberto: Boolean = false
     var diagLinhas: List<String> = emptyList()
@@ -65,7 +68,8 @@ class VitaView(ctx: Context) : View(ctx) {
         estado == Estado.TRANSMITINDO -> listOf(
             "RESOLUÇÃO: $resolucao",
             "PROPORÇÃO: " + (if (esticar) "ESTICAR" else "AJUSTAR"),
-            "DIAGNOSTICO",
++
++            "DESCONECTAR",
             "VOLTAR"
         )
         else -> listOf("TENTAR DE NOVO", "COMO CONECTAR", "DIAGNOSTICO", "SAIR")
@@ -118,6 +122,7 @@ class VitaView(ctx: Context) : View(ctx) {
         when {
             item.startsWith("RESOLU") -> aoAcao?.invoke("res+")
             item.startsWith("PROPOR") -> aoAcao?.invoke("proporcao")
+            item.startsWith("USB:") -> aoAcao?.invoke("compat")
             item == "DESCONECTAR" -> { menuAberto = false; aoAcao?.invoke("desconectar") }
             item == "VOLTAR" -> menuAberto = false
             item == "TENTAR DE NOVO" -> aoAcao?.invoke("retry")
